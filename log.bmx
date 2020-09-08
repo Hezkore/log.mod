@@ -17,21 +17,23 @@ ModuleInfo "Copyright: 2020 Rob C."
 ' Dependencies
 Import brl.standardio
 Import brl.collections
-Import BRL.StringBuilder
+Import brl.stringbuilder
+Import brl.system
 
 Type TLogger
 	
 	Field Path:String
 	Field Stream:TStream
 	Field AutoFlush:Int = True
-	Field Log:TLogLine[]
-	Field NextLine:Long
+	Field Log:TQueue<TLogLine> = New TQueue<TLogLine>
+	Field MaxLines:Int
+	Field NextLineIndex:Long
 	
-	Method New(path:String, maxLines:Long = 1000)
+	Method New(path:String, maxLines:Int = 1000)
 		Self.Path = path
+		Self.MaxLines = maxLines
 		Self.Stream = WriteStream(path)
-		Self.Log = New TLogLine[maxLines]
-		'Self.Stream.WriteLine(CurrentDate() + " " + CurrentTime())
+		Self.Stream.WriteString(CurrentDate() + " " + CurrentTime())
 	EndMethod
 	
 	Method Flush()
@@ -45,7 +47,17 @@ Type TLogger
 	EndMethod
 	
 	Private
+		Field DequeueLine:TLogLine
+		
 		Method New()
+		EndMethod
+		
+		Method TrimQueue()
+			While Self.Log.Size > Self.MaxLines
+				Self.DequeueLine = Self.Log.Dequeue()
+				If Self.DequeueLine.Writer.LastLine = Self.DequeueLine..
+					Self.DequeueLine.Writer.LastLine = Null
+			Wend
 		EndMethod
 	Public
 EndType
@@ -55,24 +67,44 @@ Type TLogWriter
 	Field Name:String
 	Field Logger:TLogger
 	Field LastLine:TLogLine
+	Field LastSeverity:ELogSeverity
 	
 	Method New(name:String, logger:TLogger)
 		Self.Name = name
 		Self.Logger = logger
 	EndMethod
 	
-	Method Write(severity:ELogSeverity = ELogSeverity.Debug, message:String, onNewLine:Int = True)
+	Method Append(message:String)
 		If Not Self.Logger Or Not Self.Logger.Stream Return
-		
-		If onNewLine Then
-			Self.Logger.Log[Self.Logger.NextLine] = New TLogLine(Self.Logger.Stream.Size(), message)
-			Self.LastLine =  Self.Logger.Log[Self.Logger.NextLine]
-			Self.Logger.NextLine:+1
-		Else
-			
+		If Not Self.LastLine And Self.LastSeverity Then
+			Self.Write(message, Self.LastSeverity)
+			Return
 		EndIf
 		
+		Self.Logger.Stream.Seek(Self.LastLine.SeekPos + 1 + Self.LastLine.Text.Length())
+		Self.LastLine.Text.Append(message)
+		Self.Logger.Stream.WriteString(message)
+		
+		For Local l:TLogLine = EachIn Self.Logger.Log
+			If l.SeekPos <= Self.LastLine.SeekPos Continue
+			l.SeekPos = Self.Logger.Stream.Pos()
+			Self.Logger.Stream.WriteString("~n"+l.Text.ToString())
+		Next
+		
 		If Self.Logger.AutoFlush Self.Logger.Flush()
+	EndMethod
+	
+	Method Write(message:String, severity:ELogSeverity = ELogSeverity.Debug)
+		If Not Self.Logger Or Not Self.Logger.Stream Return
+		
+		Self.LastLine = New TLogLine(Self.Logger.Stream.Size(), message, Self, Self.Logger.NextLineIndex)
+		Self.Logger.NextLineIndex:+1
+		Self.LastSeverity = severity
+		Self.Logger.Log.Enqueue(Self.LastLine)
+		Self.Logger.Stream.WriteString("~n"+message)
+		
+		If Self.Logger.AutoFlush Self.Logger.Flush()
+		Self.Logger.TrimQueue()
 	EndMethod
 	
 	Private
@@ -93,9 +125,13 @@ EndEnum
 Type TLogLine
 	Field SeekPos:Long
 	Field Text:TStringBuilder
+	Field Writer:TLogWriter
+	Field Index:Long
 	
-	Method New(seekPos:Long, text:String)
+	Method New(seekPos:Long, text:String, writer:TLogWriter, index:Long)
 		Self.SeekPos = seekPos
 		Self.Text = New TStringBuilder(text)
+		Self.Writer = writer
+		Self.Index = index
 	EndMethod
 EndType
