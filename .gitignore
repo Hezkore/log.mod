@@ -1,6 +1,7 @@
 .bmx/
 .vscode/
 .DS_Store
+*_log.txt
 *.exe
 *.debug
 *.debug
