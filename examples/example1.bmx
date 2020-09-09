@@ -13,4 +13,4 @@ myLogWriter.Append(" How")
 myLogWriter.Append(" are ")
 myLogWriter.Append("you?")
 
-logger.Print()
+Print(logger.ToString())
