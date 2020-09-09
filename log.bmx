@@ -19,6 +19,7 @@ Import brl.standardio
 Import brl.collections
 Import brl.stringbuilder
 Import brl.system
+Import brl.basic
 
 Type TLogger
 	
@@ -40,7 +41,9 @@ Type TLogger
 		Self.Stream.Flush()
 	EndMethod
 	
-	Method GetLines:TLogLine[](range:Long)
+	Method GetLines:TLogLine[](range:Long = -1)
+		If range = 0 Return []
+		If range < 0 range = Self.MaxLines
 		Local rl:TLogLine[range+1]
 		Local count:Long
 		Local skip:Long = Self.Lines.Count() - range
@@ -105,14 +108,14 @@ Type TLogWriter
 			Return
 		EndIf
 		
-		Self.Logger.Stream.Seek(Self.LastLine._seekPos + 1 + Self.LastLine._text.Length())
+		Self.Logger.Stream.Seek(Self.LastLine._seekPos + 1 + Self.LastLine.FullString().Length)
 		Self.LastLine._text.Append(message)
 		Self.Logger.Stream.WriteString(message)
 		
 		For Local l:TLogLine = EachIn Self.Logger.Lines
 			If l._seekPos <= Self.LastLine._seekPos Continue
 			l._seekPos = Self.Logger.Stream.Pos()
-			Self.Logger.Stream.WriteString("~n"+l.ToString())
+			Self.Logger.Stream.WriteString("~n"+l.FullString())
 		Next
 		
 		Self.Logger.Dirty = True
@@ -130,7 +133,7 @@ Type TLogWriter
 		Self.Logger.NextLineIndex:+1
 		Self.LastSeverity = severity
 		Self.Logger.Lines.Enqueue(Self.LastLine)
-		Self.Logger.Stream.WriteString("~n"+message)
+		Self.Logger.Stream.WriteString("~n"+Self.LastLine.FullString())
 		
 		Self.Logger.Dirty = True
 		If Self.Logger.AutoFlush Self.Logger.Flush()
@@ -162,6 +165,18 @@ Type TLogLine
 		Return Self._severity
 	EndMethod
 	
+	Method SeverityPadded:String(size:Int = 5)
+		Local str:String = Self.Severity().ToString()
+		If size <= str.Length Return str
+		For local i:Int = 0 Until Floor((size - str.Length)/2.0)
+			str = " " + str
+		Next
+		For local i:Int = 0 Until Ceil((size - str.Length)/2.0)
+			str:+" "
+		Next
+		Return str
+	EndMethod
+	
 	Method LineNumber:Long()
 		Return Self._index
 	EndMethod
@@ -172,6 +187,11 @@ Type TLogLine
 	
 	Method ToString:String()
 		Return Self._text.ToString()
+	EndMethod
+	
+	Method FullString:String()
+		Return "[" + Self.SeverityPadded() + " - " + Self.Time() + "] " +..
+			Self._writer.Name + " - " + Self.ToString()
 	EndMethod
 	
 	Private
