@@ -1,3 +1,7 @@
+' Example of writing to log and appending to last line
+
+SuperStrict
+
 Framework brl.standardio
 Import hez.log
 

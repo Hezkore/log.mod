@@ -26,6 +26,8 @@ Type TLogger
 	Field Path:String
 	Field AutoFlush:Int = True
 	Field MaxLines:Int
+	Field PreSection:String = "============ "
+	Field PostSection:String = " ============"
 	
 	Method New(path:String, maxLines:Int = 100)
 		Self.Path = path
@@ -108,8 +110,9 @@ Type TLogWriter
 			Return
 		EndIf
 		
-		Self.Logger.Stream.Seek(Self.LastLine._seekPos + 1 + Self.LastLine.FullString().Length)
+		Self.Logger.Stream.Seek(Self.LastLine._seekPos + 1 + Self.LastLine._appendPos)
 		Self.LastLine._text.Append(message)
+		Self.LastLine._appendPos:+message.Length
 		Self.Logger.Stream.WriteString(message)
 		
 		For Local l:TLogLine = EachIn Self.Logger.Lines
@@ -133,7 +136,26 @@ Type TLogWriter
 		Self.Logger.NextLineIndex:+1
 		Self.LastSeverity = severity
 		Self.Logger.Lines.Enqueue(Self.LastLine)
-		Self.Logger.Stream.WriteString("~n"+Self.LastLine.FullString())
+		Local fullStr:String = Self.LastLine.FullString()
+		Self.Logger.Stream.WriteString("~n"+fullStr)
+		Self.LastLine._appendPos = fullStr.Length
+		
+		Self.Logger.Dirty = True
+		If Self.Logger.AutoFlush Self.Logger.Flush()
+		Self.Logger.TrimQueue()
+	EndMethod
+	
+	Method Section(name:String)
+		If Not Self.Logger Or Not Self.Logger.Stream Return
+		
+		Local section:TLogLine = New TLogLine(..
+			Self.Logger.Stream.Size(),..
+			name,..
+			Self, Self.Logger.NextLineIndex)
+		Self.Logger.NextLineIndex:+1
+		Self.Logger.Lines.Enqueue(section)
+		Self.Logger.Stream.WriteString("~n"+section.FullString())
+		section._appendPos = name.Length
 		
 		Self.Logger.Dirty = True
 		If Self.Logger.AutoFlush Self.Logger.Flush()
@@ -159,6 +181,10 @@ Type TLogLine
 	
 	Method Parent:TLogWriter()
 		Return Self._writer
+	EndMethod
+	
+	Method IsSection:Int()
+		Return Self._isSection
 	EndMethod
 	
 	Method Severity:ELogSeverity()
@@ -190,6 +216,10 @@ Type TLogLine
 	EndMethod
 	
 	Method FullString:String()
+		' Section
+		If Self.IsSection() Return Self.Parent().Logger.PreSection +..
+			Self.ToString() + Self.Parent().Logger.PostSection
+		' Line
 		Return "[" + Self.SeverityPadded() + " - " + Self.Time() + "] " +..
 			Self._writer.Name + " - " + Self.ToString()
 	EndMethod
@@ -201,6 +231,20 @@ Type TLogLine
 		Field _index:Long
 		Field _severity:ELogSeverity
 		Field _time:String
+		Field _appendPos:Long
+		Field _isSection:Int
+		
+		Method New()
+		EndMethod
+		
+		Method New(seekPos:Long, sectionName:String, writer:TLogWriter, index:Long)
+			Self._seekPos = seekPos
+			Self._text = New TStringBuilder(sectionName)
+			Self._writer = writer
+			Self._index = index
+			Self._isSection = True
+			Self._time = CurrentTime()
+		EndMethod
 		
 		Method New(seekPos:Long, text:String, writer:TLogWriter, index:Long, severity:ELogSeverity)
 			Self._seekPos = seekPos
